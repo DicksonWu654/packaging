@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import sys
+from typing import TYPE_CHECKING
+
 import pytest
 
 from packaging.tags import Tag
@@ -18,6 +21,9 @@ from packaging.utils import (
     parse_wheel_filename,
 )
 from packaging.version import Version
+
+if TYPE_CHECKING:
+    from typing import SupportsIndex
 
 
 @pytest.mark.parametrize(
@@ -101,6 +107,49 @@ def test_is_normalized_name(name: str, expected: str) -> None:
 )
 def test_canonicalize_version(version: str, expected: str) -> None:
     assert canonicalize_version(version) == expected
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [("0", "0"), ("0.0.0", "0"), ("1.10.0", "1.10"), ("10.0.10", "10.0.10")],
+)
+def test_canonical_release_string(version: str, expected: str) -> None:
+    result = canonicalize_version(version)
+    assert type(result) is str
+    assert result == expected
+    assert canonicalize_version(version, strip_trailing_zero=False) == version
+
+
+def test_canonical_version_string_subclass() -> None:
+    class CustomVersion(str):
+        __slots__ = ()
+
+        def split(
+            self, sep: str | None = None, maxsplit: SupportsIndex = -1
+        ) -> list[str]:
+            assert sep == "."
+            assert maxsplit == -1
+            return ["2", "0"]
+
+    assert canonicalize_version(CustomVersion("1.0")) == "2"
+
+
+@pytest.mark.skipif(
+    not hasattr(sys, "get_int_max_str_digits"),
+    reason="requires int max str digits limit",
+)
+@pytest.mark.parametrize("strip", [False, True])
+def test_canonical_version_digit_limit(strip: bool) -> None:
+    old_limit = sys.get_int_max_str_digits()
+    try:
+        sys.set_int_max_str_digits(640)
+        for digits in (639, 640):
+            version = "1" * digits
+            assert canonicalize_version(version, strip_trailing_zero=strip) == version
+        with pytest.raises(ValueError, match="Exceeds the limit"):
+            canonicalize_version("1" * 641, strip_trailing_zero=strip)
+    finally:
+        sys.set_int_max_str_digits(old_limit)
 
 
 @pytest.mark.parametrize(("version"), ["1.4.0", "1.0"])

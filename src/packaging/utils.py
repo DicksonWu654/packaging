@@ -77,6 +77,8 @@ _build_tag_regex = re.compile(r"(\d+)(.*)\Z", re.ASCII)
 # PEP 427: Valid characters for an escaped project name in a wheel filename.
 # Requires at least one character so an empty project name is rejected.
 _wheel_name_regex = re.compile(r"^[\w._]+\Z", re.UNICODE)
+_canonical_release_regex = re.compile(r"(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))*")
+_trailing_zero_regex = re.compile(r"(?:\.0)+\Z")
 
 
 def canonicalize_name(name: str, *, validate: bool = False) -> NormalizedName:
@@ -190,6 +192,17 @@ def canonicalize_version(
        Added the *strip_trailing_zero* keyword parameter.
     """
     if isinstance(version, str):
+        # A normalized release needs no Version allocation. Longer inputs still
+        # go through int conversion, preserving Python's configurable digit limit
+        # (whose minimum nonzero setting is 640).
+        if (
+            type(version) is str
+            and len(version) < 640
+            and _canonical_release_regex.fullmatch(version) is not None
+        ):
+            if strip_trailing_zero and version.endswith(".0"):
+                return _trailing_zero_regex.sub("", version)
+            return version
         try:
             version = Version(version)
         except InvalidVersion:
